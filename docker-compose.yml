@@ -1,0 +1,53 @@
+networks:
+  iu-bachelor-thesis:
+    name: iu-bachelor-thesis
+    driver: bridge
+
+volumes:
+  iu-bachelor-thesis-mariadb:
+    name: iu-bachelor-thesis-mariadb
+
+services:
+  iu-bachelor-thesis-frontend:
+    image: node:24.11 # LTS
+    container_name: iu-bachelor-thesis-fronted
+    hostname: iu-bachelor-thesis-frontend
+    restart: unless-stopped
+    user: 1000:1000
+    command: npm run dev
+    working_dir: /app
+    networks:
+      - iu-bachelor-thesis
+    ports:
+      - 80:3000
+    volumes:
+      - ${PWD}/frontend:/app
+
+  iu-bachelor-thesis-backend:
+    image: node:24.11 # LTS
+    container_name: iu-bachelor-thesis-backend
+    hostname: iu-bachelor-thesis-backend
+    restart: unless-stopped
+    user: 1000:1000
+    command: npm run start:dev
+    working_dir: /app
+    networks:
+      - iu-bachelor-thesis
+    ports:
+      - 8080:3000
+    volumes:
+      - ${PWD}/backend:/app
+
+  iu-bachelor-thesis-mariadb:
+    image: mariadb:11.8 # LTS
+    container_name: iu-bachelor-thesis-mariadb
+    hostname: iu-bachelor-thesis-mariadb
+    restart: unless-stopped
+    networks:
+      - iu-bachelor-thesis
+    ports:
+      - 3306:3306
+    volumes:
+      - iu-bachelor-thesis-mariadb:/var/lib/mysql
+    environment:
+      - MARIADB_ROOT_PASSWORD=changeme

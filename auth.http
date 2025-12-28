@@ -1,0 +1,56 @@
+@baseUrl = http://localhost:8080
+@accessToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjIsImVtYWlsIjoidGVzdEBleGFtcGxlLmNvbSIsImlhdCI6MTc2NTM4MDkxMiwiZXhwIjoxNzY1MzgxODEyfQ.jbKY0NMuFTQuacmRHeSnW8VwZMeDYmtWy8YDQpZMW34
+@refreshToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjIsImVtYWlsIjoidGVzdEBleGFtcGxlLmNvbSIsImlhdCI6MTc2NTM4MDkxMiwiZXhwIjoxNzY1OTg1NzEyfQ.Itgoh54o9wSEfBGNivxd61Yii8INyWI7r4D0gMHux3g
+
+### Register
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "test@example.com",
+  "password": "Password123!",
+  "displayName": "Test User"
+}
+
+### Login
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "test@example.com",
+  "password": "Password123!"
+}
+
+### Refresh Token
+POST {{baseUrl}}/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{refreshToken}}"
+}
+
+### Logout
+POST {{baseUrl}}/auth/logout
+Authorization: Bearer {{accessToken}}
+
+### Get Me
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{accessToken}}
+
+### Update Me
+PATCH {{baseUrl}}/auth/me
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "displayName": "Updated Name",
+  "email": "newmail@example.com"
+}
+
+### Get Link Code (Kurzcode + QR-Payload)
+GET {{baseUrl}}/auth/link-code
+Authorization: Bearer {{accessToken}}
+
+### Delete Me
+DELETE {{baseUrl}}/auth/me
+Authorization: Bearer {{accessToken}}
