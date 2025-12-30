@@ -43,3 +43,8 @@ Um DTOs zu validieren, wurden die entsprechenden Pipes in main.ts hinzugefügt.
 
 Schutz vor Brute-Force-Angriffen durch Ratenbegrenzung mit
 docker exec -it iu-bachelor-thesis-backend npm install @nestjs/throttler
+
+
+Frontend
+docker exec -it iu-bachelor-thesis-frontend npm install @heroicons/react
+docker exec -it iu-bachelor-thesis-frontend npm install react-qr-code

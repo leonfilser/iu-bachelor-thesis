@@ -10,7 +10,7 @@ volumes:
 services:
   iu-bachelor-thesis-frontend:
     image: node:24.11 # LTS
-    container_name: iu-bachelor-thesis-fronted
+    container_name: iu-bachelor-thesis-frontend
     hostname: iu-bachelor-thesis-frontend
     restart: unless-stopped
     user: 1000:1000

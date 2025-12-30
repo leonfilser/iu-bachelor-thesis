@@ -1,13 +1,13 @@
 @baseUrl = http://localhost:8080
-@accessToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEsImVtYWlsIjoidGVzdEBleGFtcGxlLmNvbSIsImlhdCI6MTc2NjkxOTIxNCwiZXhwIjoxNzY2OTIwMTE0fQ.nOnzxWu56MREaRY9djQlzyIZGSSeIc1i_faW1ondRQg
-@refreshToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjEsImVtYWlsIjoidGVzdEBleGFtcGxlLmNvbSIsImlhdCI6MTc2NjkxOTIxNCwiZXhwIjoxNzY3NTI0MDE0fQ.NwuH6LYb3MJkU9t90YKRWXW2LHS86ygQB9I82APMQGE
+@accessToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjMsImVtYWlsIjoidGVzdEBleGFtcGxlLmNvbSIsImlhdCI6MTc2NzEyNDk1NywiZXhwIjoxNzY3MTI1ODU3fQ.u-K82wiMQkN1jtRTYRtl0g6Zkb87EtWvEsVEmcOAa9Y
+@refreshToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjMsImVtYWlsIjoidGVzdEBleGFtcGxlLmNvbSIsImlhdCI6MTc2NzEyNDk1NywiZXhwIjoxNzY3NzI5NzU3fQ.ejzxPpt3JuODeEVERwwPspcQuU9Pl16y5-jthYfSoR8
 
 ### Register
 POST {{baseUrl}}/auth/register
 Content-Type: application/json
 
 {
-  "email": "test@example.com",
+  "email": "test@example2.com",
   "password": "Password123!",
   "displayName": "Test User"
 }
