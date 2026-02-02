@@ -23,16 +23,63 @@ export class AuthService {
     private readonly jwtService: JwtService,
   ) {}
 
+  // ---------------------------------------------------------
+  // VALIDIERUNGS-LOGIK (NEU)
+  // ---------------------------------------------------------
+
+  /**
+   * Prüft das Format der E-Mail-Adresse
+   */
+  private validateEmail(email: string) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      throw new BadRequestException('Die angegebene E-Mail-Adresse ist ungültig.');
+    }
+  }
+
+  /**
+   * Prüft die Passwort-Komplexität:
+   * - Min. 8 Zeichen
+   * - 1 Großbuchstabe, 1 Kleinbuchstabe
+   * - 1 Zahl
+   * - 1 Sonderzeichen
+   */
+  private validatePassword(password: string) {
+    const minLength = 8;
+    // Regex Erklärung:
+    // (?=.*[a-z]) -> Mindestens ein Kleinbuchstabe
+    // (?=.*[A-Z]) -> Mindestens ein Großbuchstabe
+    // (?=.*\d)    -> Mindestens eine Zahl
+    // (?=.*[\W_]) -> Mindestens ein Sonderzeichen
+    const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/;
+
+    if (!strongPasswordRegex.test(password)) {
+      throw new BadRequestException(
+        `Das Passwort ist zu schwach. Es muss mindestens ${minLength} Zeichen lang sein und jeweils einen Großbuchstaben, einen Kleinbuchstaben, eine Zahl und ein Sonderzeichen enthalten.`
+      );
+    }
+  }
+
+  // ---------------------------------------------------------
+  // ENDPOINTS
+  // ---------------------------------------------------------
+
   // POST /auth/register
   async register(dto: RegisterDto) {
+    // 1. Validierung (NEU)
+    this.validateEmail(dto.email);
+    this.validatePassword(dto.password);
+
+    // 2. Prüfen ob User existiert
     const existing = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
 
     if (existing) {
-      throw new BadRequestException('Email already in use');
+      throw new BadRequestException('Diese E-Mail-Adresse wird bereits verwendet.');
     }
 
+    // 3. User anlegen
     const hashedPassword = await argon2.hash(dto.password);
 
     const user = await this.prisma.user.create({
@@ -54,22 +101,28 @@ export class AuthService {
 
   // POST /auth/login
   async login(dto: LoginDto) {
+    // Hier prüfen wir nur grob, ob Felder da sind, keine strenge Passwort-Policy,
+    // um User Enumeration Attacks nicht zu erleichtern bzw. alte Passwörter noch zuzulassen.
+    if (!dto.email || !dto.password) {
+        throw new BadRequestException('Bitte E-Mail und Passwort angeben.');
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
 
     if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException('Ungültige Zugangsdaten');
     }
 
     const passwordValid = await argon2.verify(user.password, dto.password);
     if (!passwordValid) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException('Ungültige Zugangsdaten');
     }
 
     const tokens = await this.issueTokens(user.id, user.email);
 
-    // Refresh Token (gehasht oder plain – hier gehasht) speichern:
+    // Refresh Token speichern (gehasht)
     const hashedRefreshToken = await argon2.hash(tokens.refreshToken);
     await this.prisma.user.update({
       where: { id: user.id },
@@ -101,7 +154,7 @@ export class AuthService {
       });
 
       if (!user || !user.refreshToken) {
-        throw new UnauthorizedException('Invalid refresh token');
+        throw new UnauthorizedException('Ungültiger Refresh-Token');
       }
 
       const refreshTokenMatches = await argon2.verify(
@@ -110,7 +163,7 @@ export class AuthService {
       );
 
       if (!refreshTokenMatches) {
-        throw new UnauthorizedException('Invalid refresh token');
+        throw new UnauthorizedException('Ungültiger Refresh-Token');
       }
 
       const tokens = await this.issueTokens(user.id, user.email);
@@ -123,7 +176,7 @@ export class AuthService {
 
       return tokens;
     } catch {
-      throw new UnauthorizedException('Invalid refresh token');
+      throw new UnauthorizedException('Ungültiger Refresh-Token');
     }
   }
 
@@ -155,12 +208,28 @@ export class AuthService {
     const data: any = {};
 
     if (dto.email) {
+      // Validierung bei Update (NEU)
+      this.validateEmail(dto.email);
+      
+      // Prüfen ob die neue Email schon von JEMAND ANDEREM verwendet wird
+      const existing = await this.prisma.user.findUnique({
+          where: { email: dto.email }
+      });
+      // Wenn es einen User gibt UND es nicht der aktuelle User ist -> Fehler
+      if (existing && existing.id !== userId) {
+          throw new BadRequestException('Diese E-Mail-Adresse wird bereits verwendet.');
+      }
+      
       data.email = dto.email;
     }
+
     if (dto.displayName !== undefined) {
       data.displayName = dto.displayName;
     }
+
     if (dto.password) {
+      // Validierung bei Update (NEU)
+      this.validatePassword(dto.password);
       data.password = await argon2.hash(dto.password);
     }
 
@@ -209,45 +278,112 @@ export class AuthService {
     };
   }
 
-  private readonly SHORT_CODE_WINDOW_MS = 60_000;
+  // ---------------------------
+  // Shortcode: on-demand + RAM
+  // ---------------------------
+
+  private readonly SHORT_CODE_TTL_MS = 90_000; // 90s
   private readonly SHORT_CODE_LENGTH = 6;
-  private readonly SHORT_CODE_CHARSET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 
-  private generateShortCode(userId: number) {
+  // NUR ZIFFERN
+  private readonly SHORT_CODE_CHARSET = '0123456789';
+
+  // RAM-Store: code -> { userId, expiresAt }
+  private readonly shortCodeStore = new Map<
+    string,
+    { userId: number; expiresAt: number }
+  >();
+
+  private cleanupExpiredShortCodes() {
     const now = Date.now();
-    const window = Math.floor(now / this.SHORT_CODE_WINDOW_MS);
+    for (const [code, entry] of this.shortCodeStore.entries()) {
+      if (entry.expiresAt <= now) {
+        this.shortCodeStore.delete(code);
+      }
+    }
+  }
 
-    const secret = process.env.SHORT_CODE_SECRET || 'short-code-dev-secret';
-
-    const hmac = crypto.createHmac('sha256', secret);
-    hmac.update(`${userId}:${window}`);
-    const digest = hmac.digest(); // Buffer
-
+  private generateShortCode() {
+    // simpel, zufällig, 6-stellig, NUR ZIFFERN
+    const bytes = crypto.randomBytes(this.SHORT_CODE_LENGTH);
     let code = '';
     for (let i = 0; i < this.SHORT_CODE_LENGTH; i++) {
-      const byte = digest[i];
-      code += this.SHORT_CODE_CHARSET[byte % this.SHORT_CODE_CHARSET.length];
+      code +=
+        this.SHORT_CODE_CHARSET[bytes[i] % this.SHORT_CODE_CHARSET.length];
+    }
+    return code;
+  }
+
+  // GET /auth/shortcode
+  async getShortCode(userId: number) {
+    this.cleanupExpiredShortCodes();
+
+    let code = this.generateShortCode();
+    while (this.shortCodeStore.has(code)) {
+      code = this.generateShortCode();
     }
 
-    const validUntilMs = (window + 1) * this.SHORT_CODE_WINDOW_MS;
+    const expiresAtMs = Date.now() + this.SHORT_CODE_TTL_MS;
+    this.shortCodeStore.set(code, { userId, expiresAt: expiresAtMs });
 
     return {
       code,
-      expiresAt: new Date(validUntilMs),
+      expiresAt: new Date(expiresAtMs).toISOString(),
+      qrPayload: code,
     };
   }
 
-  async getLinkCode(userId: number) {
-    const { code, expiresAt } = this.generateShortCode(userId);
+  // POST /auth/shortcode
+  async authenticateWithShortCode(code: string) {
+    if (!code) {
+      throw new BadRequestException('Code ist erforderlich');
+    }
 
-    // Wenn du willst, kannst du hier statt "code" auch
-    // ein URL-Schema zurückgeben, z.B.: vrpair://pair?code=XYZ123&uid=42
-    // Für jetzt bleiben wir beim reinen Code als Payload.
+    // optional: einfache Validierung, da nur Ziffern erlaubt sind
+    if (!/^\d{6}$/.test(code)) {
+      throw new BadRequestException('Code muss aus 6 Ziffern bestehen');
+    }
+
+    this.cleanupExpiredShortCodes();
+
+    const entry = this.shortCodeStore.get(code);
+    if (!entry) {
+      throw new UnauthorizedException('Code ist ungültig oder abgelaufen');
+    }
+
+    if (entry.expiresAt <= Date.now()) {
+      this.shortCodeStore.delete(code);
+      throw new UnauthorizedException('Code ist ungültig oder abgelaufen');
+    }
+
+    // One-time use
+    this.shortCodeStore.delete(code);
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: entry.userId },
+      select: { id: true, email: true, displayName: true },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Code ist ungültig oder abgelaufen');
+    }
+
+    const tokens = await this.issueTokens(user.id, user.email);
+
+    // RefreshToken speichern, damit Refresh später funktioniert
+    const hashedRefreshToken = await argon2.hash(tokens.refreshToken);
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { refreshToken: hashedRefreshToken },
+    });
 
     return {
-      code, // 6-stellig, z.B. "A7K9Z2"
-      expiresAt: expiresAt.toISOString(), // für die UI, um den Countdown zu berechnen
-      qrPayload: code, // Frontend nutzt das 1:1 für den QR-Code
+      user: {
+        id: user.id,
+        email: user.email,
+        displayName: user.displayName,
+      },
+      ...tokens,
     };
   }
 }

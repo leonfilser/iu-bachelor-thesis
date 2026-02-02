@@ -1,13 +1,13 @@
-@baseUrl = http://localhost:8080
-@accessToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjMsImVtYWlsIjoidGVzdEBleGFtcGxlLmNvbSIsImlhdCI6MTc2NzEyNDk1NywiZXhwIjoxNzY3MTI1ODU3fQ.u-K82wiMQkN1jtRTYRtl0g6Zkb87EtWvEsVEmcOAa9Y
-@refreshToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjMsImVtYWlsIjoidGVzdEBleGFtcGxlLmNvbSIsImlhdCI6MTc2NzEyNDk1NywiZXhwIjoxNzY3NzI5NzU3fQ.ejzxPpt3JuODeEVERwwPspcQuU9Pl16y5-jthYfSoR8
-
+@baseUrl = http://152.53.132.106:3000
+@accessToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjIsImVtYWlsIjoidGVzdEBleGFtcGxlLmNvbSIsImlhdCI6MTc2ODE0ODgzOSwiZXhwIjoxNzY4MTQ5NzM5fQ.lXTxQzixcNULHJByGE76oUZqeShI1v_33En73h3zA4w
+@refreshToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjIsImVtYWlsIjoidGVzdEBleGFtcGxlLmNvbSIsImlhdCI6MTc2ODE0ODgzOSwiZXhwIjoxNzY4NzUzNjM5fQ.FBzHC3akUP0oRWu_eWu_heu5ehRg6_QB-PD7j_US3uA
+@shortcode = VFQAP3
 ### Register
 POST {{baseUrl}}/auth/register
 Content-Type: application/json
 
 {
-  "email": "test@example2.com",
+  "email": "test@example.com",
   "password": "Password123!",
   "displayName": "Test User"
 }
@@ -47,9 +47,17 @@ Content-Type: application/json
   "email": "newmail@example.com"
 }
 
-### Get Link Code (Kurzcode + QR-Payload)
-GET {{baseUrl}}/auth/link-code
+### Get Shortcode (Kurzcode + QR-Payload)
+GET {{baseUrl}}/auth/shortcode
 Authorization: Bearer {{accessToken}}
+
+### Auth with Shortcode (liefert neue Tokens)
+POST {{baseUrl}}/auth/shortcode
+Content-Type: application/json
+
+{
+  "code": "{{shortcode}}"
+}
 
 ### Delete Me
 DELETE {{baseUrl}}/auth/me

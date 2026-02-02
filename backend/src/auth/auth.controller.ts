@@ -66,9 +66,16 @@ export class AuthController {
     return this.authService.deleteMe(req.user.userId);
   }
 
+  // GET /auth/shortcode
   @UseGuards(JwtAuthGuard)
-  @Get('link-code')
-  getLinkCode(@Req() req: any) {
-    return this.authService.getLinkCode(req.user.userId);
+  @Get('shortcode')
+  getShortCode(@Req() req: any) {
+    return this.authService.getShortCode(req.user.userId);
+  }
+
+  // POST /auth/shortcode
+  @Post('shortcode')
+  authWithShortCode(@Body() body: { code: string }) {
+    return this.authService.authenticateWithShortCode(body.code);
   }
 }

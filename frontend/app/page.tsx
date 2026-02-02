@@ -3,568 +3,558 @@
 import { useCallback, useEffect, useState } from "react"
 import QRCode from "react-qr-code"
 import {
-  ArrowTopRightOnSquareIcon,
   EnvelopeIcon,
   LockClosedIcon,
   UserIcon,
   EyeIcon,
   EyeSlashIcon,
   ArrowRightOnRectangleIcon,
-  TrashIcon,
-  XMarkIcon,
-  KeyIcon,
-  CheckCircleIcon,
-  ExclamationCircleIcon,
-  PencilIcon,
-  CheckIcon,
-  ExclamationTriangleIcon,
-  PlayIcon,
-  FlagIcon,
-  BackwardIcon,
-  StopIcon,
-  AcademicCapIcon, // Neu für die Intro-Seite
+  ArrowLeftIcon,
+  ArrowTopRightOnSquareIcon,
+  MagnifyingGlassPlusIcon,
 } from "@heroicons/react/24/solid"
 
-// --- Typen & Konstanten ---
-
-type User = {
-  id: number
-  email: string
-  displayName: string
-}
-
-type LinkCodeResponse = {
-  code: string
-  expiresAt: string
-  qrPayload: string
-}
+// --------------------
+// Typen & Konstanten
+// --------------------
 
 type ViewMode = "Login" | "Register" | "Profile"
-type NotificationType = "success" | "error" | null
+type ScenarioID = "R2" | "A2" | "A3" | "A0" | null
 
-// Szenario Beschreibungen
-const SCENARIOS: Record<number, { title: string; description: string }> = {
-  1: {
-    title: "VR-Only Registrierung",
-    description: "In diesem Szenario nutzen Sie ausschließlich das VR-Headset. Registrieren Sie sich und loggen Sie sich direkt dort mithilfe der Controller oder Handgesten ein."
+interface ScenarioConfig {
+  id: string
+  title: string
+  description: string
+  type: "prompt" | "interface"
+  initialView?: ViewMode
+  showQR?: boolean
+  showShort?: boolean
+}
+
+const SCENARIOS: Record<string, ScenarioConfig> = {
+  R2: { 
+    id: "R2", 
+    title: "Szenario R2", 
+    description: "",
+    type: "interface", 
+    initialView: "Register"
   },
-  2: {
-    title: "Web-Registrierung & VR-Login",
-    description: "Erstellen Sie Ihr Konto hier im Web. Das Einloggen erfolgt anschließend manuell über die Tastatur im VR-Headset. Datenänderungen können Sie jederzeit hier vornehmen."
+  A2: { 
+    id: "A2", 
+    title: "Szenario A2", 
+    description: "",
+    type: "interface", 
+    initialView: "Login", 
+    showShort: true 
   },
-  3: {
-    title: "Login via Kurzcode",
-    description: "Registrieren und loggen Sie sich hier ein. Nutzen Sie anschließend den angezeigten 6-stelligen Code, um Ihr Headset schnell und ohne Tippen zu verbinden."
+  A3: { 
+    id: "A3", 
+    title: "Szenario A3", 
+    description: "",
+    type: "interface", 
+    initialView: "Login", 
+    showQR: true 
   },
-  4: {
-    title: "Login via QR-Code",
-    description: "Registrieren und loggen Sie sich hier ein. Scannen Sie danach einfach den QR-Code mit dem Headset, um sofort loszulegen."
+  A0: { 
+    id: "A0", 
+    title: "Onboarding-Szenario", 
+    description: "",
+    type: "interface", 
+    initialView: "Login", // ÄNDERUNG: Standardansicht ist jetzt Login
+    showQR: true, 
+    showShort: true 
   },
 }
 
-// Hilfsfunktion: Passwort-Stärke
-const validatePassword = (pw: string) => {
-  return {
-    length: pw.length >= 8 && pw.length <= 64,
-    upper: /[A-Z]/.test(pw),
-    lower: /[a-z]/.test(pw),
-    number: /[0-9]/.test(pw),
-    special: /[^A-Za-z0-9]/.test(pw),
-  }
-}
+// --------------------
+// UI Komponenten
+// --------------------
 
-const isPasswordSecure = (pw: string) => {
-  const check = validatePassword(pw)
-  return Object.values(check).every(Boolean)
-}
-
-// --- UI Komponenten ---
-
-const ToastNotification = ({ type, message, onClose }: { type: NotificationType, message: string | null, onClose: () => void }) => {
+const ToastNotification = ({
+  message,
+  type,
+  onClose,
+}: {
+  message: string | null
+  type: "success" | "error" | null
+  onClose: () => void
+}) => {
   useEffect(() => {
-    if (message) {
-      const timer = setTimeout(() => onClose(), 3000)
-      return () => clearTimeout(timer)
-    }
+    if (!message) return
+    // Timer: Nach 4 Sekunden ausblenden
+    const timer = setTimeout(() => {
+      onClose()
+    }, 4000)
+    return () => clearTimeout(timer)
   }, [message, onClose])
 
-  if (!message || !type) return null
-  const isError = type === "error"
+  if (!message) return null
 
   return (
-    <div className="fixed top-48 left-0 right-0 mx-auto z-[100] flex w-fit min-w-[320px] max-w-md animate-[slideDown_0.3s_ease-out] items-center gap-3 rounded-full bg-white px-6 py-3 shadow-xl ring-1 ring-black/5">
-      {isError ? <ExclamationCircleIcon className="h-6 w-6 text-red-500" /> : <CheckCircleIcon className="h-6 w-6 text-green-500" />}
-      <div className="flex-1 text-sm font-medium text-gray-700">{message}</div>
-      <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><XMarkIcon className="h-4 w-4" /></button>
+    <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-3 rounded-lg px-4 py-2 text-sm font-medium shadow-md transition-all duration-300 ${
+      type === "error" ? "bg-red-50 text-red-700 border border-red-200" : "bg-green-50 text-green-700 border border-green-200"
+    }`}>
+      <span>{message}</span>
     </div>
   )
 }
 
-const ConfirmationModal = ({ isOpen, onConfirm, onCancel, title, message }: { isOpen: boolean, onConfirm: () => void, onCancel: () => void, title: string, message: string }) => {
-  if (!isOpen) return null
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm animate-[fadeIn_0.2s_ease-out]">
-      <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl animate-[zoomIn_0.2s_ease-out]">
-        <div className="flex flex-col items-center text-center gap-4">
-          <div className="rounded-full bg-red-100 p-3 text-red-600"><ExclamationTriangleIcon className="h-8 w-8" /></div>
-          <div><h3 className="text-lg font-bold text-gray-900">{title}</h3><p className="mt-2 text-sm text-gray-500">{message}</p></div>
-          <div className="mt-2 flex w-full gap-3">
-            <button onClick={onCancel} className="flex-1 rounded-xl border border-gray-200 bg-white py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">Abbrechen</button>
-            <button onClick={onConfirm} className="flex-1 rounded-xl bg-red-600 py-2.5 text-sm font-medium text-white hover:bg-red-700 transition-colors shadow-lg shadow-red-200">Löschen bestätigen</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-const InputField = ({ icon, type = "text", placeholder, value, name, onChange, disabled = false, readOnly = false, isPassword = false, actionButton, isValid = null }: any) => {
+const InputField = ({
+  icon,
+  type = "text",
+  placeholder,
+  value,
+  name,
+  onChange,
+  disabled = false,
+  isPassword = false,
+}: any) => {
   const [showPassword, setShowPassword] = useState(false)
   const inputType = isPassword ? (showPassword ? "text" : "password") : type
-  const borderColor = isValid === true ? "border-green-500 focus:border-green-500 focus:ring-green-100" : isValid === false ? "border-red-300 focus:border-red-400 focus:ring-red-100" : "border-gray-200 focus:border-blue-400 focus:ring-blue-100"
-  const iconColor = isValid === true ? "text-green-500" : isValid === false ? "text-red-400" : "text-blue-400/80"
 
   return (
-    <div className={`relative w-full transition-opacity ${disabled ? "opacity-60" : "opacity-100"}`}>
-      {icon && <div className={`pointer-events-none absolute inset-y-0 left-4 flex items-center transition-colors ${iconColor}`}>{icon}</div>}
-      <input type={inputType} name={name} placeholder={placeholder} value={value} onChange={onChange} disabled={disabled} readOnly={readOnly} className={`w-full rounded-xl border bg-gray-50 py-3 text-gray-700 shadow-sm transition-all placeholder:text-gray-400 ${borderColor} ${!readOnly && !disabled ? "bg-white focus:outline-none focus:ring-2" : "cursor-default border-transparent bg-gray-100/50"} ${icon ? "pl-11" : "px-4"} ${actionButton || isPassword ? "pr-12" : "pr-4"}`} />
-      <div className="absolute inset-y-0 right-3 flex items-center gap-2">
-        {isPassword && !disabled && (<button type="button" onClick={() => setShowPassword(!showPassword)} tabIndex={-1} className="rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-blue-500 focus:outline-none">{showPassword ? <EyeSlashIcon className="h-5 w-5" /> : <EyeIcon className="h-5 w-5" />}</button>)}
-        {actionButton}
-      </div>
+    <div className="relative w-full">
+      {icon && <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-400">{icon}</div>}
+      <input
+        type={inputType}
+        name={name}
+        placeholder={placeholder}
+        value={value}
+        onChange={onChange}
+        disabled={disabled}
+        className={`w-full rounded-lg border border-gray-300 bg-white py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50 ${
+          icon ? "pl-10" : "px-3"
+        } ${isPassword ? "pr-10" : "pr-3"}`}
+      />
+      {isPassword && !disabled && (
+        <button
+          type="button"
+          onClick={() => setShowPassword(!showPassword)}
+          className="absolute inset-y-0 right-2 flex items-center text-gray-400 hover:text-gray-600"
+        >
+          {showPassword ? <EyeSlashIcon className="h-4 w-4" /> : <EyeIcon className="h-4 w-4" />}
+        </button>
+      )}
     </div>
   )
 }
 
-const Button = ({ onClick, disabled, variant = "primary", children, type = "button", className = "" }: any) => {
-  const base = "flex items-center justify-center gap-2 rounded-full px-6 py-2.5 font-medium transition-all active:scale-95 disabled:pointer-events-none disabled:opacity-50"
+const Button = ({ onClick, disabled, variant = "primary", children, className = "", type = "button" }: any) => {
+  const base = "flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
   const variants: any = {
-    primary: "bg-blue-500 text-white shadow-blue-200 hover:bg-blue-600 shadow-lg hover:shadow-xl",
-    secondary: "bg-white border border-gray-200 text-gray-700 hover:border-blue-300 hover:text-blue-600",
-    danger: "bg-red-50 text-red-600 hover:bg-red-100 border border-transparent",
-    ghost: "text-gray-500 hover:text-blue-600 hover:bg-blue-50/50 bg-transparent",
-    dark: "bg-gray-800 text-white hover:bg-gray-900 shadow-lg",
+    primary: "bg-blue-600 text-white hover:bg-blue-700",
+    secondary: "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50",
+    dark: "bg-gray-800 text-white hover:bg-gray-900",
   }
   return (
     <button type={type} onClick={onClick} disabled={disabled} className={`${base} ${variants[variant]} ${className}`}>
-      {disabled && variant === "primary" ? <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" /> : null}
       {children}
     </button>
   )
 }
 
-const PasswordRequirements = ({ password, confirmPassword }: { password: string, confirmPassword?: string }) => {
-  if (!password) return null
-  const status = validatePassword(password)
-  const match = confirmPassword !== undefined ? (password === confirmPassword && confirmPassword.length > 0) : true
-  const Item = ({ met, text }: { met: boolean, text: string }) => (
-    <div className={`flex items-center gap-2 text-xs transition-colors ${met ? "text-green-600" : "text-gray-400"}`}>
-      {met ? <CheckCircleIcon className="h-3.5 w-3.5 shrink-0" /> : <div className="h-3.5 w-3.5 shrink-0 rounded-full border border-gray-300" />}
-      <span>{text}</span>
-    </div>
-  )
-  return (
-    <div className="grid grid-cols-1 gap-y-1 gap-x-4 px-2 pt-1 sm:grid-cols-2 animate-[fadeIn_0.3s_ease-out]">
-      <Item met={status.length} text="8-64 Zeichen" />
-      <Item met={status.upper} text="1 Großbuchstabe" />
-      <Item met={status.lower} text="1 Kleinbuchstabe" />
-      <Item met={status.number} text="1 Zahl" />
-      <Item met={status.special} text="1 Sonderzeichen" />
-      {confirmPassword !== undefined && <Item met={match} text="Passwörter stimmen überein" />}
-    </div>
-  )
-}
-
-const ProfileField = ({ label, fieldKey, icon, formData, editingField, user, setEditingField, setFormData, handleUpdateProfile, handleInputChange }: any) => {
-  const isEditing = fieldKey === editingField
-  return (
-    <div className="group relative">
-      <label className="mb-1 ml-1 block text-xs font-medium text-gray-500">{label}</label>
-      <InputField
-        name={fieldKey} type={fieldKey === "email" ? "email" : "text"} icon={icon} placeholder={label} value={formData[fieldKey]} onChange={handleInputChange} readOnly={!isEditing} disabled={!isEditing && editingField !== "none"}
-        actionButton={isEditing ? (
-            <div className="flex items-center gap-1">
-              <button onClick={() => handleUpdateProfile(fieldKey)} className="rounded-full bg-blue-500 p-1.5 text-white shadow-md hover:bg-blue-600" title="Speichern"><CheckIcon className="h-4 w-4" /></button>
-              <button onClick={() => { setEditingField("none"); setFormData((prev: any) => ({...prev, [fieldKey]: user ? user[fieldKey] : ""})) }} className="rounded-full bg-gray-100 p-1.5 text-gray-500 hover:bg-gray-200" title="Abbrechen"><XMarkIcon className="h-4 w-4" /></button>
-            </div>
-          ) : (
-            <button onClick={() => setEditingField(fieldKey)} className="invisible p-1 text-gray-400 hover:text-blue-500 group-hover:visible"><PencilIcon className="h-4 w-4" /></button>
-          )
-        }
-      />
-    </div>
-  )
-}
-
-// --- Hauptkomponente ---
+// --------------------
+// Hauptlogik
+// --------------------
 
 export default function AuthPage() {
-  const apiBaseUrl = "http://localhost:8080"
+  const apiBaseUrl = "http://152.53.132.106:3000"
+
+  // State Navigation & Logic
+  const [activeScenarioId, setActiveScenarioId] = useState<ScenarioID>(null)
   
-  // App Logic States
+  // State UI
   const [view, setView] = useState<ViewMode>("Login")
   const [loading, setLoading] = useState(false)
-  const [notification, setNotification] = useState<{ type: NotificationType; msg: string | null }>({ type: null, msg: null })
-  const [showDeleteModal, setShowDeleteModal] = useState(false)
-  const [user, setUser] = useState<User | null>(null)
+  const [notification, setNotification] = useState<{ type: "success" | "error" | null; msg: string | null }>({ type: null, msg: null })
+  
+  const [user, setUser] = useState<any>(null)
   const [formData, setFormData] = useState({ email: "", displayName: "", password: "", confirmPassword: "" })
-  const [editingField, setEditingField] = useState<"none" | "displayName" | "email" | "password">("none")
-  const [linkCode, setLinkCode] = useState<LinkCodeResponse | null>(null)
+
+  // Shortcode / QR
+  const [shortCodeData, setShortCodeData] = useState<{ code: string; expiresAt: string; qrPayload: string } | null>(null)
   const [remainingSec, setRemainingSec] = useState<number | null>(null)
+  const [isQrEnlarged, setIsQrEnlarged] = useState(false)
 
-  // Evaluation States
-  const [showIntro, setShowIntro] = useState(true) // Startet mit Intro
-  const [scenarioOrder, setScenarioOrder] = useState<number[]>([]) 
-  const [currentScenarioIndex, setCurrentScenarioIndex] = useState(0)
+  // Berechnete Werte
+  const currentConfig = activeScenarioId ? SCENARIOS[activeScenarioId] : null
+  const showQrCode = currentConfig?.showQR
+  const showShortCode = currentConfig?.showShort
   
-  // Start-Funktion (Randomisiert HIER, nicht beim Laden der Seite)
-  const startEvaluation = () => {
-    const shuffled = [1, 2, 3, 4].sort(() => Math.random() - 0.5)
-    setScenarioOrder(shuffled)
-    setCurrentScenarioIndex(0)
-    setShowIntro(false)
-  }
+  // --------------------
+  // API & Handler
+  // --------------------
 
-  const currentScenario = scenarioOrder[currentScenarioIndex] || 0 // Fallback für Typesafety
-  const isEvaluationFinished = !showIntro && currentScenarioIndex >= scenarioOrder.length
-  
-  // Helper Variablen für UI
-  const showMainCard = !showIntro && !isEvaluationFinished && currentScenario !== 1 
-  const showQrCode = currentScenario === 4
-  const showShortCode = currentScenario === 3
-
-  const closeToast = useCallback(() => setNotification({ type: null, msg: null }), [])
   const showToast = useCallback((type: "success" | "error", msg: string) => setNotification({ type, msg }), [])
-  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value })), [])
-  const getToken = () => localStorage.getItem("accessToken")
+  
+  const handleCloseNotification = useCallback(() => {
+    setNotification({ type: null, msg: null })
+  }, [])
 
-  const passwordSecure = isPasswordSecure(formData.password)
-  const passwordsMatch = formData.password === formData.confirmPassword && formData.confirmPassword.length > 0
-  const formValid = passwordSecure && passwordsMatch
-
-  const apiRequest = async (endpoint: string, method: string, body?: any) => {
-    const token = getToken()
+  const apiRequest = useCallback(async (endpoint: string, method: string, body?: any) => {
+    const token = localStorage.getItem("accessToken")
     const headers: Record<string, string> = { "Content-Type": "application/json" }
     if (token) headers.Authorization = `Bearer ${token}`
-    const res = await fetch(`${apiBaseUrl}${endpoint}`, { method, headers, body: body ? JSON.stringify(body) : undefined })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.message || "Fehler aufgetreten")
-    return data
-  }
 
-  const silentReset = async () => {
-    try {
-      const token = getToken()
-      if (token) {
-        await fetch(`${apiBaseUrl}/auth/me`, { 
-            method: "DELETE", 
-            headers: { Authorization: `Bearer ${token}` } 
-        })
-      }
-    } catch (e) { /* ignore */ }
+    const res = await fetch(`${apiBaseUrl}${endpoint}`, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.message || "Ein Fehler ist aufgetreten")
+    return data
+  }, [])
+
+  const resetAuthState = useCallback(() => {
     localStorage.clear()
     setUser(null)
-    setView("Login")
-    setEditingField("none")
     setFormData({ email: "", displayName: "", password: "", confirmPassword: "" })
-  }
-
-  const handleScenarioSwitch = async (direction: "next" | "prev") => {
-    await silentReset()
-    if (direction === "next") {
-        setCurrentScenarioIndex(prev => prev + 1)
-    } else {
-        setCurrentScenarioIndex(prev => Math.max(0, prev - 1))
-    }
-  }
+    setShortCodeData(null)
+  }, [])
 
   const fetchMe = useCallback(async () => {
-    const token = getToken()
-    if (!token) return
+    if (!localStorage.getItem("accessToken")) return
     try {
       const data = await apiRequest("/auth/me", "GET")
       setUser(data)
-      setFormData(prev => ({ ...prev, email: data.email || "", displayName: data.displayName || "" }))
+      setFormData(p => ({ ...p, email: data.email || "", displayName: data.displayName || "" }))
       setView("Profile")
-    } catch { handleLogout() }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    } catch {
+      resetAuthState()
+      if (currentConfig?.initialView) setView(currentConfig.initialView)
+    }
+  }, [apiRequest, resetAuthState, currentConfig])
 
-  const handleLogout = useCallback(() => {
-    localStorage.clear()
-    setUser(null)
+  // Initial Check
+  useEffect(() => { 
+    if(activeScenarioId) fetchMe() 
+  }, [fetchMe, activeScenarioId])
+
+  // Manueller Logout Button
+  const handleLogout = () => {
+    resetAuthState()
     setView("Login")
-    setEditingField("none")
-    setFormData({ email: "", displayName: "", password: "", confirmPassword: "" })
     showToast("success", "Erfolgreich abgemeldet")
-  }, [showToast])
+  }
 
-  const handleAuthSubmit = async (e: React.FormEvent) => {
+  // --------------------
+  // Szenario Steuerung
+  // --------------------
+
+  const handleSelectScenario = (id: string) => {
+    resetAuthState()
+    const config = SCENARIOS[id]
+    
+    // View setzen
+    if (config.initialView) {
+      setView(config.initialView)
+    } else {
+      setView("Login")
+    }
+    
+    setActiveScenarioId(id as ScenarioID)
+  }
+
+  const handleFinishScenario = async () => {
+    resetAuthState()
+    setActiveScenarioId(null)
+  }
+
+  // --------------------
+  // Timer & Shortcode/QR Fetcher
+  // --------------------
+  useEffect(() => {
+    if (view !== "Profile" || (!showQrCode && !showShortCode)) return
+
+    let interval: NodeJS.Timeout
+    
+    const loadCode = async () => {
+      try {
+        const data = await apiRequest("/auth/shortcode", "GET")
+        setShortCodeData(data)
+      } catch (e) { console.error(e) }
+    }
+
+    loadCode()
+
+    interval = setInterval(() => {
+      setShortCodeData(prev => {
+        if (!prev) return prev
+        const seconds = Math.floor((new Date(prev.expiresAt).getTime() - Date.now()) / 1000)
+        setRemainingSec(seconds > 0 ? seconds : 0)
+        if (seconds <= 0) loadCode()
+        return prev
+      })
+    }, 1000)
+
+    return () => clearInterval(interval)
+  }, [view, showQrCode, showShortCode, apiRequest])
+
+  // --------------------
+  // Form Handler
+  // --------------------
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     try {
       if (view === "Register") {
-        if (!passwordSecure) throw new Error("Passwort erfüllt nicht die Sicherheitsanforderungen.")
-        if (!passwordsMatch) throw new Error("Passwörter stimmen nicht überein.")
-        await apiRequest("/auth/register", "POST", formData)
-        showToast("success", "Registrierung erfolgreich! Bitte anmelden.")
+        if (formData.password !== formData.confirmPassword) throw new Error("Passwörter stimmen nicht überein.")
+        
+        await apiRequest("/auth/register", "POST", { ...formData })
+        
+        if (activeScenarioId === "R2") {
+            showToast("success", "Erfolgreich registriert! Szenario R2 beendet.")
+        } else {
+            showToast("success", "Registriert! Bitte anmelden.")
+        }
+        
         setView("Login")
-        setFormData(prev => ({...prev, password: "", confirmPassword: ""}))
-      } else if (view === "Login") {
+      } else {
         const data = await apiRequest("/auth/login", "POST", { email: formData.email, password: formData.password })
         localStorage.setItem("accessToken", data.accessToken)
-        localStorage.setItem("refreshToken", data.refreshToken)
-        showToast("success", "Willkommen zurück!")
+        showToast("success", "Angemeldet!")
         await fetchMe()
       }
-    } catch (err: any) { showToast("error", err.message) } 
-    finally { setLoading(false) }
+    } catch (err: any) {
+      showToast("error", err.message)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const confirmDeleteProfile = async () => {
-    setLoading(true)
-    setShowDeleteModal(false)
-    try {
-      await apiRequest("/auth/me", "DELETE")
-      localStorage.clear()
-      setUser(null)
-      setView("Login")
-      setEditingField("none")
-      setFormData({ email: "", displayName: "", password: "", confirmPassword: "" })
-      showToast("success", "Ihr Profil wurde erfolgreich gelöscht")
-    } catch (err: any) { showToast("error", err.message) } 
-    finally { setLoading(false) }
-  }
+  // --------------------
+  // Render Helpers
+  // --------------------
+  const TimerDisplay = () => (
+    <div className="mt-2 text-center text-[10px] font-medium text-blue-200">
+        Neu in <span className="font-mono text-white">{remainingSec ? String(remainingSec).padStart(2, '0') : "--"}s</span>
+    </div>
+  )
 
-  const handleUpdateProfile = async (field: "displayName" | "email" | "password") => {
-    setLoading(true)
-    try {
-      const payload: any = {}
-      if (field === "password") {
-        if (!passwordSecure) throw new Error("Passwort unsicher")
-        if (!passwordsMatch) throw new Error("Passwörter stimmen nicht überein")
-        payload.password = formData.password
-      } else {
-        payload[field] = formData[field as keyof typeof formData]
-      }
-      await apiRequest("/auth/me", "PATCH", payload)
-      let successMsg = "Erfolgreich gespeichert"
-      if (field === "password") successMsg = "Passwort erfolgreich aktualisiert"
-      if (field === "displayName") successMsg = "Anzeigename erfolgreich aktualisiert"
-      if (field === "email") successMsg = "E-Mail Adresse erfolgreich aktualisiert"
-      showToast("success", successMsg)
-      setEditingField("none")
-      if(field === "password") setFormData(prev => ({...prev, password: "", confirmPassword: ""}))
-      else await fetchMe()
-    } catch (err: any) { showToast("error", err.message) } 
-    finally { setLoading(false) }
-  }
+  // --------------------
+  // MAIN RENDER
+  // --------------------
 
-  useEffect(() => { fetchMe() }, [fetchMe])
+  // 1. Dashboard (Start Screen)
+  if (!activeScenarioId) {
+    const scenarioList = ["R2", "A2", "A3", "A0"]
 
-  useEffect(() => {
-    if (view !== "Profile") return
-    let interval: NodeJS.Timeout
-    const loadCode = async () => { try { const data = await apiRequest("/auth/link-code", "GET"); setLinkCode(data) } catch (e) { console.error(e) } }
-    loadCode()
-    const tick = setInterval(() => {
-      setLinkCode(prev => {
-        if(!prev) return null
-        const secs = Math.max(0, Math.floor((new Date(prev.expiresAt).getTime() - Date.now()) / 1000))
-        setRemainingSec(secs)
-        if (secs <= 0) loadCode()
-        return prev
-      })
-    }, 1000)
-    return () => clearInterval(tick)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view])
-
-  // --- RENDERING ---
-
-  // 1. INTRO SCREEN
-  if (showIntro) {
     return (
-      <div className="flex min-h-screen w-full items-center justify-center bg-[#F3F4F6] p-4 font-sans text-gray-900">
-        <div className="flex w-full max-w-2xl flex-col items-center justify-center gap-6 rounded-3xl bg-white p-12 text-center shadow-2xl animate-[fadeIn_0.5s_ease-out]">
-          <div className="rounded-full bg-blue-100 p-6 text-blue-600">
-             <AcademicCapIcon className="h-16 w-16" />
-          </div>
-          <h1 className="text-3xl font-bold text-gray-900">Willkommen</h1>
-          <p className="text-lg text-gray-600 leading-relaxed max-w-lg">
-            Im Rahmen meiner Bachelorarbeit evaluiere ich verschiedene Authentifizierungsmethoden für Virtual-Reality-Umgebungen.
-            <br/><br/>
-            Es folgen <strong>4 Szenarien</strong>, die Sie nacheinander durchlaufen. Bitte lesen Sie die Anweisungen zu jedem Szenario sorgfältig durch.
-          </p>
-          <div className="mt-4">
-             <Button onClick={startEvaluation} className="px-8 py-3 text-lg shadow-xl shadow-blue-200">
-                Evaluierung starten <PlayIcon className="ml-2 h-5 w-5" />
-             </Button>
-          </div>
+      <div className="flex min-h-screen w-full flex-col items-center justify-center bg-gray-100 font-sans text-gray-900 p-6">
+        <h1 className="text-3xl font-bold mb-2">Dashboard</h1>
+        <p className="text-gray-500 mb-8">Bitte wählen Sie das nächste Szenario</p>
+        
+        <div className="w-full max-w-md space-y-4">
+          {scenarioList.map((id) => {
+            const config = SCENARIOS[id]
+            
+            return (
+              <button 
+                key={id}
+                onClick={() => handleSelectScenario(id)}
+                className="w-full flex items-center justify-center p-5 bg-white rounded-xl shadow-sm border border-gray-200 hover:border-blue-500 hover:shadow-md transition-all group"
+              >
+                <span className="font-bold text-gray-800 text-lg group-hover:text-blue-600">
+                    {config.title}
+                </span>
+              </button>
+            )
+          })}
         </div>
       </div>
     )
   }
 
-  // 2. EVALUATION UI
+  // 2. Active Scenario View
   return (
-    <div className="flex min-h-screen w-full flex-col items-center justify-center bg-[#F3F4F6] p-4 font-sans text-gray-900">
-      <ToastNotification type={notification.type} message={notification.msg} onClose={closeToast} />
-      <ConfirmationModal isOpen={showDeleteModal} title="Profil löschen?" message="Möchten Sie Ihr Profil wirklich unwiderruflich löschen?" onCancel={() => setShowDeleteModal(false)} onConfirm={confirmDeleteProfile} />
-      
-      {/* --- Evaluation Header --- */}
-      <div className="mb-8 flex flex-col items-center animate-[slideDown_0.5s_ease-out] w-full max-w-3xl z-20">
-         {isEvaluationFinished ? (
-           <div className="flex flex-col items-center gap-4 rounded-2xl bg-white p-8 shadow-xl border border-blue-100">
-              <FlagIcon className="h-12 w-12 text-blue-500" />
-              <h2 className="text-2xl font-bold text-gray-800">Evaluation beendet</h2>
-              <p className="text-gray-500">Vielen Dank für die Teilnahme an der Studie.</p>
-              <Button onClick={() => window.location.reload()} variant="secondary" className="mt-2">Zurück zum Start</Button>
-           </div>
-         ) : (
-           <div className="flex items-center justify-between w-full rounded-2xl bg-white px-6 py-6 shadow-lg border border-gray-100 gap-6">
-             {/* Previous */}
-             <button 
-                onClick={() => handleScenarioSwitch("prev")}
-                disabled={currentScenarioIndex === 0}
-                className="p-3 rounded-full hover:bg-gray-100 text-gray-400 hover:text-blue-600 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
-                title="Vorheriges Szenario"
-             >
-                <BackwardIcon className="h-6 w-6" />
-             </button>
+    <div className="flex min-h-screen w-full flex-col items-center justify-center bg-gray-100 p-4 font-sans text-gray-900 pb-28">
+      <ToastNotification type={notification.type} message={notification.msg} onClose={handleCloseNotification} />
 
-             {/* Info Text */}
-             <div className="flex flex-col items-center text-center flex-1">
-                <span className="text-[11px] uppercase tracking-wider text-gray-400 font-bold mb-1">
-                  Szenario {currentScenarioIndex + 1} von 4
-                </span>
-                <span className="text-xl font-bold text-blue-600 leading-tight mb-2">
-                    {SCENARIOS[currentScenario]?.title}
-                </span>
-                <p className="text-sm text-gray-600 leading-relaxed">
-                    {SCENARIOS[currentScenario]?.description}
-                </p>
-             </div>
-             
-             {/* Next / Finish */}
-             <Button variant="dark" onClick={() => handleScenarioSwitch("next")} className="px-6 py-2.5 text-sm shrink-0">
-                {currentScenarioIndex === 3 ? "Beenden" : "Weiter"} 
-                {currentScenarioIndex === 3 ? <StopIcon className="h-4 w-4 ml-2" /> : <PlayIcon className="h-4 w-4 ml-2" />}
-             </Button>
-           </div>
-         )}
-      </div>
-
-      {/* --- Main Card --- */}
-      {showMainCard && (
-        <div className="flex w-full max-w-5xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl md:flex-row animate-[zoomIn_0.3s_ease-out]">
-          
-          {/* LEFT PANEL */}
-          <div className="relative flex flex-1 flex-col justify-between overflow-hidden bg-blue-600 p-8 text-white md:p-12">
-            <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-blue-500 opacity-50 blur-3xl" />
-            <div className="absolute -bottom-20 -left-20 h-64 w-64 rounded-full bg-indigo-500 opacity-50 blur-3xl" />
-            <div className="relative z-10">
-              <h1 className="text-3xl font-bold tracking-tight">Anywhere Academy</h1>
-              <p className="mt-2 text-blue-100">Immersives Lernen in VR</p>
+      {/* QR Code Overlay (Zoom) */}
+      {isQrEnlarged && shortCodeData && (
+        <div 
+            className="fixed inset-0 z-50 flex cursor-pointer items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+            onClick={() => setIsQrEnlarged(false)}
+        >
+            <div className="rounded-2xl bg-white p-6 shadow-2xl">
+                <QRCode value={shortCodeData.qrPayload} size={300} />
+                <div className="mt-4 text-center text-sm font-medium text-gray-500">Zum Schließen klicken</div>
             </div>
-            
-            <div className="relative z-10 mt-8 flex flex-1 flex-col items-center justify-center">
-              {view === "Profile" && currentScenario !== 2 ? (
-                <div className="w-full max-w-xs rounded-2xl bg-white/10 p-6 backdrop-blur-md border border-white/20 text-center transition-all duration-500">
+        </div>
+      )}
+
+      {/* Szenario: Interface (R2, A2, A3, A0) */}
+      {currentConfig?.type === "interface" && (
+        <div className="flex w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl md:flex-row min-h-[500px]">
+          
+          {/* Linke Seite (Blau) */}
+          <div className="flex w-full flex-col justify-between bg-blue-600 p-8 text-white md:w-5/12">
+            <div>
+              <h1 className="text-2xl font-bold">Anywhere Academy</h1>
+              <p className="text-blue-100 text-sm">Avatarbasiertes Lehren und Lernen in VR</p>
+            </div>
+
+            <div className="flex flex-1 flex-col items-center justify-center py-6 gap-4">
+              {view === "Profile" && (showQrCode || showShortCode) ? (
+                <div className="flex flex-col gap-4 w-full items-center">
                   
-                  {/* S4: QR Code Only */}
+                  {/* QR Code Block */}
                   {showQrCode && (
-                    <div className="mx-auto mb-4 w-fit rounded-xl bg-white p-3 shadow-lg">
-                      {linkCode ? (
-                           <QRCode value={linkCode.qrPayload} size={140} />
-                      ) : (
-                        <div className="h-[140px] w-[140px] animate-pulse bg-gray-200 rounded-lg" />
-                      )}
+                    <div className="w-full max-w-[200px] rounded-xl bg-white/10 p-3 border border-white/20 backdrop-blur-sm text-center">
+                          <div className="text-xs text-blue-200 mb-2 uppercase font-bold tracking-wider">QR-Code Login</div>
+                          
+                          <div 
+                           className="group relative mx-auto w-fit cursor-pointer rounded-lg bg-white p-3 transition-transform hover:scale-105" 
+                           onClick={() => setIsQrEnlarged(true)}
+                          >
+                           {shortCodeData ? (
+                               <QRCode value={shortCodeData.qrPayload} size={140} />
+                           ) : (
+                               <div className="h-[140px] w-[140px] bg-gray-200 animate-pulse rounded" />
+                           )}
+                           <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/10 rounded-lg transition-opacity">
+                               <MagnifyingGlassPlusIcon className="w-8 h-8 text-gray-900" />
+                           </div>
+                          </div>
+                          
+                          <div 
+                           className="mt-2 flex items-center justify-center gap-1 text-[10px] font-medium text-blue-200 opacity-80 cursor-pointer hover:text-white hover:opacity-100 transition-colors"
+                           onClick={() => setIsQrEnlarged(true)}
+                          >
+                             <MagnifyingGlassPlusIcon className="h-3 w-3" /> Zum Vergrößern klicken
+                          </div>
+
+                          {!showShortCode && <TimerDisplay />}
                     </div>
                   )}
 
-                  {/* S3: Kurzcode Only */}
+                  {/* Shortcode Block */}
                   {showShortCode && (
-                    <>
-                      <div className="font-mono text-3xl font-bold tracking-widest">{linkCode?.code || "..."}</div>
-                      <div className="text-xs text-blue-200 mt-1">Code läuft ab in {remainingSec ? String(Math.floor(remainingSec / 60)).padStart(2,"0")+":"+String(remainingSec % 60).padStart(2,"0") : "--:--"}</div>
-                    </>
+                    <div className="w-full max-w-[200px] rounded-xl bg-white/10 p-3 border border-white/20 backdrop-blur-sm text-center">
+                        <div className="text-xs text-blue-200 mb-1 uppercase font-bold tracking-wider">Kurzcode Login</div>
+                        <div className="font-mono text-3xl font-bold tracking-widest text-white">{shortCodeData?.code || "..."}</div>
+                        <TimerDisplay />
+                    </div>
                   )}
 
                 </div>
               ) : (
-                // Standardansicht für Login/Register UND Szenario 2
-                <div className="space-y-6 text-center md:text-left">
-                  <p className="max-w-md text-lg leading-relaxed text-blue-50">Verbinde dich mit deinem Avatar, betritt virtuelle Klassenräume und lerne gemeinsam mit anderen.</p>
-                  <a href="https://anywhere.academy" target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-full bg-white/10 px-5 py-2 text-sm font-medium backdrop-blur-sm transition hover:bg-white/20">Mehr erfahren <ArrowTopRightOnSquareIcon className="h-4 w-4" /></a>
+                <div className="text-blue-50 text-sm leading-relaxed">
+                  Anywhere Academy bietet eine Palette an vielseitig einsetzbaren VR-Umgebungen, die für die höhere Lehre konzipiert sind. 
                 </div>
               )}
             </div>
           </div>
 
-          {/* RIGHT PANEL */}
-          <div className="flex flex-1 flex-col justify-center bg-white p-8 md:p-16">
-            <div className="mx-auto w-full max-w-sm">
-              <div className="mb-8"><h2 className="text-2xl font-bold text-gray-900">{view === "Login" && "Willkommen zurück"}{view === "Register" && "Konto erstellen"}{view === "Profile" && "Profileinstellungen"}</h2></div>
-              
-              {view === "Profile" ? (
-                <div className="flex flex-col gap-5 animate-[fadeIn_0.5s_ease-out]">
-                  {editingField !== "password" && (
-                    <>
-                      <ProfileField label="Anzeigename (Optional)" fieldKey="displayName" icon={<UserIcon className="h-5 w-5" />} formData={formData} editingField={editingField} user={user} setEditingField={setEditingField} setFormData={setFormData} handleUpdateProfile={handleUpdateProfile} handleInputChange={handleInputChange} />
-                      <ProfileField label="E-Mail Adresse" fieldKey="email" icon={<EnvelopeIcon className="h-5 w-5" />} formData={formData} editingField={editingField} user={user} setEditingField={setEditingField} setFormData={setFormData} handleUpdateProfile={handleUpdateProfile} handleInputChange={handleInputChange} />
-                    </>
-                  )}
-                  {editingField === "password" ? (
-                    <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-4 space-y-3">
-                      <h3 className="text-sm font-semibold text-blue-900">Passwort ändern</h3>
-                      <div className="space-y-3">
-                        <InputField name="password" type="password" placeholder="Neues Passwort" value={formData.password} onChange={handleInputChange} isPassword icon={<KeyIcon className="h-5 w-5"/>} isValid={formData.password.length > 0 ? passwordSecure : null} />
-                        <div className="animate-[fadeIn_0.2s_ease-out]"><InputField name="confirmPassword" type="password" placeholder="Passwort wiederholen" value={formData.confirmPassword} onChange={handleInputChange} isPassword icon={<KeyIcon className="h-5 w-5"/>} isValid={formData.confirmPassword.length > 0 ? passwordsMatch : null} /></div>
-                        <PasswordRequirements password={formData.password} confirmPassword={formData.confirmPassword} />
-                      </div>
-                      <div className="flex gap-2 pt-2">
-                        <Button onClick={() => handleUpdateProfile("password")} disabled={loading || !formValid} className="flex-1 text-sm">Speichern</Button>
-                        <Button variant="secondary" onClick={() => setEditingField("none")} className="flex-1 text-sm">Abbrechen</Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="mt-4 flex flex-col gap-3 border-t border-gray-100 pt-6">
-                      <Button variant="secondary" onClick={() => setEditingField("password")}><KeyIcon className="h-4 w-4" /> Passwort ändern</Button>
-                      <div className="grid grid-cols-2 gap-3">
-                          <Button variant="ghost" onClick={handleLogout}><ArrowRightOnRectangleIcon className="h-4 w-4" /> Abmelden</Button>
-                          <Button variant="ghost" className="text-red-500 hover:bg-red-50 hover:text-red-600" onClick={() => setShowDeleteModal(true)}><TrashIcon className="h-4 w-4" /> Löschen</Button>
-                      </div>
-                    </div>
-                  )}
+          {/* Rechte Seite (Formular) */}
+          <div className="flex flex-1 flex-col justify-center p-8 md:p-12 bg-white">
+            <h2 className="mb-6 text-xl font-bold text-gray-800">
+              {view === "Login" && "Anmelden"}
+              {view === "Register" && "Konto erstellen"}
+              {view === "Profile" && "Mein Profil"}
+            </h2>
+
+            {view === "Profile" ? (
+              <div className="space-y-4">
+                <div className="rounded-lg bg-gray-50 p-4 border border-gray-100">
+                    <div className="text-xs text-gray-500 uppercase font-bold tracking-wider mb-1">Angemeldet als</div>
+                    <div className="font-medium text-gray-900">{user?.displayName || "Benutzer"}</div>
+                    <div className="text-sm text-gray-600">{user?.email}</div>
                 </div>
-              ) : (
-                <form onSubmit={handleAuthSubmit} className="flex flex-col gap-4 animate-[fadeIn_0.5s_ease-out]">
-                  {view === "Register" && <InputField name="displayName" placeholder="Anzeigename (Optional)" value={formData.displayName} onChange={handleInputChange} icon={<UserIcon className="h-5 w-5" />} />}
-                  <InputField name="email" type="email" placeholder="E-Mail Adresse" value={formData.email} onChange={handleInputChange} icon={<EnvelopeIcon className="h-5 w-5" />} />
-                  <div className="space-y-3">
-                      <InputField name="password" type="password" placeholder="Passwort" value={formData.password} onChange={handleInputChange} isPassword icon={<LockClosedIcon className="h-5 w-5" />} isValid={view === "Register" && formData.password.length > 0 ? passwordSecure : null} />
-                      {view === "Register" && (
-                          <>
-                              <div className="animate-[fadeIn_0.2s_ease-out]"><InputField name="confirmPassword" type="password" placeholder="Passwort wiederholen" value={formData.confirmPassword} onChange={handleInputChange} isPassword icon={<LockClosedIcon className="h-5 w-5" />} isValid={formData.confirmPassword.length > 0 ? passwordsMatch : null} /></div>
-                              <PasswordRequirements password={formData.password} confirmPassword={formData.confirmPassword} />
-                          </>
-                      )}
-                  </div>
-                  <div className="mt-4"><Button type="submit" disabled={loading || (view === "Register" && !formValid)} className="w-full">{loading ? "Verarbeite..." : (view === "Login" ? "Anmelden" : "Registrieren")}</Button></div>
-                  <div className="mt-2 text-center text-sm text-gray-500">{view === "Login" ? "Neu hier? " : "Bereits ein Konto? "}<button type="button" onClick={() => { setView(view === "Login" ? "Register" : "Login"); setFormData({ email: "", displayName: "", password: "", confirmPassword: "" }) }} className="font-semibold text-blue-600 hover:underline">{view === "Login" ? "Jetzt registrieren" : "Hier anmelden"}</button></div>
-                </form>
-              )}
-            </div>
+                <Button variant="secondary" onClick={handleLogout} className="w-full">
+                  <ArrowRightOnRectangleIcon className="h-4 w-4" /> Abmelden
+                </Button>
+              </div>
+            ) : (
+              <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+                {view === "Register" && (
+                  <InputField
+                    name="displayName"
+                    placeholder="Anzeigename"
+                    value={formData.displayName}
+                    onChange={(e: any) => setFormData({ ...formData, displayName: e.target.value })}
+                    icon={<UserIcon className="h-4 w-4" />}
+                  />
+                )}
+                
+                <InputField
+                  name="email"
+                  type="email"
+                  placeholder="E-Mail Adresse"
+                  value={formData.email}
+                  onChange={(e: any) => setFormData({ ...formData, email: e.target.value })}
+                  icon={<EnvelopeIcon className="h-4 w-4" />}
+                />
+
+                <InputField
+                  name="password"
+                  isPassword
+                  placeholder="Passwort"
+                  value={formData.password}
+                  onChange={(e: any) => setFormData({ ...formData, password: e.target.value })}
+                  icon={<LockClosedIcon className="h-4 w-4" />}
+                />
+
+                {view === "Register" && (
+                    <>
+                      <InputField
+                        name="confirmPassword"
+                        isPassword
+                        placeholder="Passwort wiederholen"
+                        value={formData.confirmPassword}
+                        onChange={(e: any) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                        icon={<LockClosedIcon className="h-4 w-4" />}
+                      />
+                      <div className="px-1 text-[11px] leading-tight text-gray-500">
+                        Mindestens 8 Zeichen, 1 Großbuchstaben, 1 Kleinbuchstaben, 1 Zahl, 1 Sonderzeichen.
+                      </div>
+                    </>
+                )}
+
+                <Button type="submit" disabled={loading} className="mt-2 w-full">
+                  {view === "Login" ? "Anmelden" : "Registrieren"}
+                </Button>
+
+                <div className="mt-2 text-center text-xs text-gray-500">
+                  <button
+                    type="button"
+                    onClick={() => {
+                        setView(view === "Login" ? "Register" : "Login")
+                        setFormData({ email: "", displayName: "", password: "", confirmPassword: "" })
+                    }}
+                    className="text-blue-600 hover:underline"
+                  >
+                    {view === "Login" ? "Noch kein Konto? Registrieren" : "Bereits ein Konto? Anmelden"}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
 
-      <style jsx global>{`
-        @keyframes slideDown { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes zoomIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
-      `}</style>
+      {/* Footer Navigation */}
+      <div className="fixed bottom-8 left-0 right-0 mx-auto flex w-fit max-w-[90vw] items-center gap-6 rounded-2xl bg-white px-6 py-4 shadow-xl border border-gray-200 z-40">
+        <div className="flex flex-col">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                Aktives Szenario
+            </span>
+            <span className="text-base font-bold text-gray-800">
+                {currentConfig?.title}
+            </span>
+        </div>
+        
+        <div className="h-10 w-px bg-gray-200 hidden sm:block"></div>
+
+        <button 
+            onClick={handleFinishScenario}
+            className="flex shrink-0 items-center gap-2 rounded-xl bg-gray-100 px-5 py-3 text-sm font-bold text-gray-700 hover:bg-gray-200 transition-colors"
+        >
+            <ArrowLeftIcon className="h-4 w-4" /> Szenario beenden
+        </button>
+      </div>
     </div>
   )
 }
